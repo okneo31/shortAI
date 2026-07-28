@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>가짜 세상의 진실 — 1분 쇼츠</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:#08080a; color:#fff;
+    font-family:'Pretendard','Apple SD Gothic Neo',-apple-system,'Segoe UI',sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; user-select:none;
+  }
+
+  /* ── 무대: 지정 화면비 고정. 녹화 시 이 영역만 잡으면 된다 ── */
+  #stage{
+    position:relative; overflow:hidden;
+    display:flex; flex-direction:column;
+    background:#000;
+    transition:background-color .45s linear;
+    box-shadow:0 0 80px rgba(0,0,0,.9);
+  }
+
+  /* ── 이미지 레이어: 플레이트 2장을 번갈아 써서 컷 전환을 크로스페이드 ──
+     각 플레이트에 Web Animations API로 카메라 무브(팬·줌·회전)를 건다.
+     이미지 40장만 있어도 영상처럼 움직인다. */
+  #bg{position:absolute; inset:0; z-index:1; overflow:hidden}
+  .plate{
+    position:absolute; inset:0;
+    background-size:cover; background-position:center; background-repeat:no-repeat;
+    opacity:0; will-change:transform,opacity;
+    transform-origin:50% 50%;
+  }
+
+  #vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:10;
+    background:radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,0,0,.85) 100%);
+    opacity:0; transition:opacity .6s linear;
+  }
+
+  /* ── 상단 진행바: 세그먼트 폭이 각 컷의 실제 길이에 비례 ── */
+  #progress{
+    position:absolute; top:2.2%; left:5%; right:5%;
+    display:flex; gap:2px; height:5px; z-index:20;
+  }
+  .seg{background:rgba(255,255,255,.22); border-radius:3px; overflow:hidden}
+  .seg > i{display:block; height:100%; width:0; background:#fff; box-shadow:0 0 8px #fff}
+
+  /* ── 헤더 ── */
+  #header{
+    position:absolute; top:5%; left:6%; right:6%;
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:1.6vh; font-weight:800; letter-spacing:.14em; opacity:.85; z-index:20;
+  }
+  #actor{padding:.5vh 1.2vh; border-radius:2vh; background:rgba(0,0,0,.32); letter-spacing:.08em}
+
+  /* ── 중앙 비주얼 ── */
+  #iconWrap{flex:1; display:flex; align-items:center; justify-content:center; padding-top:6%; z-index:15}
+  #icon{font-size:22vh; line-height:1; filter:drop-shadow(0 1vh 3vh rgba(0,0,0,.55))}
+  #icon.pop{animation:pop .5s cubic-bezier(.2,1.4,.35,1)}
+  @keyframes pop{0%{transform:scale(.72) translateY(2vh);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+
+  /* ── 자막 블록 ── */
+  #captions{position:relative; z-index:15; padding:0 7% 12%; display:flex; flex-direction:column; gap:1.6vh}
+  #title{
+    font-size:5.4vh; font-weight:900; line-height:1.28; word-break:keep-all; letter-spacing:-.02em;
+    text-shadow:0 .4vh 1.6vh rgba(0,0,0,.75), 0 0 .3vh rgba(0,0,0,.9);
+  }
+  #title.slide{animation:slide .42s cubic-bezier(.16,1,.3,1)}
+  @keyframes slide{0%{transform:translateY(2.4vh);opacity:0;filter:blur(6px)}100%{transform:translateY(0);opacity:1;filter:blur(0)}}
+  #narration{
+    font-size:2.4vh; font-weight:500; line-height:1.55; opacity:.88; word-break:keep-all;
+    text-shadow:0 .2vh .8vh rgba(0,0,0,.7);
+  }
+  #narration.hidden{display:none}
+
+  #act{position:absolute; bottom:5.5%; left:7%; font-size:1.5vh; font-weight:800; letter-spacing:.2em; opacity:.5; z-index:20}
+  #clock{position:absolute; bottom:5.5%; right:7%; font-size:1.5vh; font-weight:700; opacity:.5; font-variant-numeric:tabular-nums; z-index:20}
+
+  /* ── 오버레이 ── */
+  .overlay{
+    position:absolute; inset:0; z-index:40;
+    background:rgba(0,0,0,.9); backdrop-filter:blur(6px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2.2vh; text-align:center; padding:8%;
+  }
+  .overlay.gone{display:none}
+  .overlay h1{font-size:5vh; font-weight:900; letter-spacing:-.02em; word-break:keep-all}
+  .overlay p{font-size:1.9vh; opacity:.65; line-height:1.7; word-break:keep-all}
+  .cta{
+    margin-top:1vh; padding:1.8vh 4vh; border-radius:5vh;
+    background:#fff; color:#000; font-size:2.2vh; font-weight:900; border:0; cursor:pointer;
+  }
+  .cta:active{transform:scale(.97)}
+  #countdown{font-size:16vh; font-weight:900; line-height:1}
+
+  /* ── 컨트롤: 무대 바깥 좌측 레일. 자막을 절대 가리지 않는다 ── */
+  #controls{
+    position:fixed; left:1.6vh; top:50%; transform:translateY(-50%);
+    display:flex; flex-direction:column; gap:.7vh; z-index:60;
+    background:rgba(20,20,22,.92); border:1px solid rgba(255,255,255,.14);
+    padding:1.1vh; border-radius:1.6vh; backdrop-filter:blur(12px);
+    opacity:1; transition:opacity .35s ease;
+  }
+  #controls.dim{opacity:.16}
+  #controls:hover{opacity:1}
+  #controls button{
+    background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.16); color:#fff;
+    font-size:1.5vh; font-weight:700; padding:.9vh 1.4vh; border-radius:1vh;
+    cursor:pointer; white-space:nowrap; text-align:left;
+  }
+  #controls button:hover{background:rgba(255,255,255,.2)}
+  #controls button.rec{background:rgba(255,60,60,.22); border-color:rgba(255,90,90,.45)}
+  #controls .hint{font-size:1.2vh; opacity:.45; padding:.4vh .3vh 0; line-height:1.6}
+  body.clean #controls{display:none}
+  body.clean #stage{box-shadow:none}
+
+  /* 무대 좌우 여백이 없을 만큼 좁으면 상단(자막 반대편)으로 */
+  @media (max-aspect-ratio: 10/16){
+    #controls{left:50%; top:11%; transform:translateX(-50%); flex-direction:row; align-items:center; border-radius:4vh}
+    #controls .hint{display:none}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="bg"><div class="plate"></div><div class="plate"></div></div>
+  <div id="vignette"></div>
+  <div id="progress"></div>
+
+  <div id="header">
+    <span id="cutNo">CUT 01</span>
+    <span id="actor"></span>
+  </div>
+
+  <div id="iconWrap"><div id="icon"></div></div>
+
+  <div id="captions">
+    <div id="title"></div>
+    <div id="narration"></div>
+  </div>
+
+  <div id="act"></div>
+  <div id="clock">0.0 / 0.0s</div>
+
+  <div class="overlay" id="startOverlay">
+    <h1>가짜 세상의 진실 — 1분 쇼츠</h1>
+    <p id="startMeta"></p>
+    <button class="cta" id="playBtn">▶ 재생</button>
+    <p style="font-size:1.5vh;opacity:.42">Space 정지 · ← → 컷 이동 · R 처음부터 · H 컨트롤 숨김 · N 나레이션</p>
+  </div>
+
+  <div class="overlay gone" id="countOverlay"><div id="countdown">3</div></div>
+</div>
+
+<div id="controls">
+  <button id="btnPlay">▶ 재생</button>
+  <button id="btnRestart">↺ 처음부터</button>
+  <button id="btnNarr">나레이션 끄기</button>
+  <button id="btnClean">🎬 녹화 모드</button>
+  <button id="btnRec" class="rec">⏺ 영상으로 저장</button>
+  <span class="hint">Space 정지 · ← → 컷<br>R 처음 · H 숨김 · N 나레이션</span>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════
+   1) CONFIG — 작품 단위 설정
+   ══════════════════════════════════════════════════════════════ */
+const CONFIG = {
+  aspect: "9:16",
+
+  timing: "fixed",       // 40컷 × 1.5초 = 정확히 60.0초
+  fixedSec: 1.5,
+  autoCharPerSec: 6.5,
+  autoMinSec: 1.2,
+  targetSec: null,
+
+  theme: {               // 오렌지 → 올리브/청록 → 보라 → 크림슨 → 칠흑
+    hueFrom: 30,  hueTo: 342,
+    satFrom: 85,  satTo: 100,
+    lightFrom: 52, lightTo: 3,
+    lightCurve: 1.6,
+    vignetteFrom: 0.45
+  },
+
+  image: {               // img/cutNN.webp (frames_hq 1440px -> 1080px webp q82)
+    opacity: 0.55,
+    crossfadeMs: 380,
+    defaultMove: "auto",
+    intensity: 1.0
+  },
+
+  tts: false,
+  ttsRate: 1.05,
+  endHoldSec: 0.4
+};
+
+/* ── 카메라 무브 사전 ──────────────────────────────────────────
+   s=배율, x/y=이동(%), r=회전(deg). 컷에 move:"pushIn" 으로 지정.
+   팬 계열은 여백이 보이지 않도록 기본 배율을 1.18 이상으로 둔다. */
+const MOVES = {
+  still:   {from:{s:1.06,x:0,y:0,r:0},      to:{s:1.06,x:0,y:0,r:0},      ease:"linear"},
+  pushIn:  {from:{s:1.02,x:0,y:0,r:0},      to:{s:1.22,x:0,y:0,r:0},      ease:"cubic-bezier(.33,0,.15,1)"},
+  pullOut: {from:{s:1.24,x:0,y:0,r:0},      to:{s:1.04,x:0,y:0,r:0},      ease:"cubic-bezier(.33,0,.15,1)"},
+  panL:    {from:{s:1.18,x: 5,y:0,r:0},     to:{s:1.18,x:-5,y:0,r:0},     ease:"cubic-bezier(.4,0,.4,1)"},
+  panR:    {from:{s:1.18,x:-5,y:0,r:0},     to:{s:1.18,x: 5,y:0,r:0},     ease:"cubic-bezier(.4,0,.4,1)"},
+  tiltUp:  {from:{s:1.20,x:0,y: 6,r:0},     to:{s:1.26,x:0,y:-4,r:0},     ease:"cubic-bezier(.4,0,.4,1)"},
+  tiltDown:{from:{s:1.20,x:0,y:-6,r:0},     to:{s:1.26,x:0,y: 4,r:0},     ease:"cubic-bezier(.4,0,.4,1)"},
+  diagIn:  {from:{s:1.05,x: 3,y: 3,r:0},    to:{s:1.24,x:-3,y:-3,r:0},    ease:"cubic-bezier(.33,0,.15,1)"},
+  orbitL:  {from:{s:1.22,x: 2,y:0,r:-1.4},  to:{s:1.22,x:-2,y:0,r: 0.8},  ease:"cubic-bezier(.4,0,.4,1)"},
+  orbitR:  {from:{s:1.22,x:-2,y:0,r: 1.4},  to:{s:1.22,x: 2,y:0,r:-0.8},  ease:"cubic-bezier(.4,0,.4,1)"},
+  impact:  {from:{s:1.34,x:0,y:0,r:0.6},    to:{s:1.12,x:0,y:0,r:0},      ease:"cubic-bezier(.05,.9,.2,1)"},
+  driftUp: {from:{s:1.14,x:0,y: 4,r:0},     to:{s:1.20,x:0,y:-2,r:0},     ease:"linear"}
+};
+/* defaultMove:"auto" 일 때 컷 순서대로 순환하는 리듬 */
+const AUTO_MOVES = ["pushIn","panL","pullOut","tiltUp","diagIn","panR","pushIn","tiltDown","orbitL","pullOut"];
+
+/* ══════════════════════════════════════════════════════════════
+   2) ACTS — 구간 라벨 (선택). from/to 는 0-based 컷 인덱스
+   ══════════════════════════════════════════════════════════════ */
+const ACTS = [
+  {from:0,  to:9,  label:"ACT 1 · 환상"},
+  {from:10, to:24, label:"ACT 2 · 덫"},
+  {from:25, to:39, label:"ACT 3 · 수확"}
+];
+
+/* ══════════════════════════════════════════════════════════════
+   3) CUTS — 콘티 데이터. 이 배열만 갈아끼우면 다른 영상이 된다
+      필수: title
+      선택: actor, icon, narr, sec(개별 길이 override), img(배경 이미지),
+            move(카메라 무브 — MOVES 키), hue/sat/light(개별 색 override)
+   ══════════════════════════════════════════════════════════════ */
+const CUTS = [
+  // ACT 1 — 밝은 환상과 균열 (00:00–00:15)
+  {actor:"📺 MEDIA", icon:"📱", title:'"성실하면 부자가 된다"',        narr:"어른들은 매일 이렇게 말해요.", img:"img/cut01.webp"},
+  {actor:"📺 MEDIA", icon:"💼", title:"첫 월급",                       narr:"그래서 열심히 일합니다.", img:"img/cut02.webp"},
+  {actor:"💳 BANK",  icon:"🏦", title:'"안전하게 맡겨요"',              narr:"돈은 은행에 맡기면 안전하죠.", img:"img/cut03.webp"},
+  {actor:"💳 BANK",  icon:"💳", title:"숫자가 늘어난다 = 부자?",        narr:"숫자가 올라가면 부자가 되는 줄 알았어요.", img:"img/cut04.webp"},
+  {actor:"🏛️ GOV",   icon:"📜", title:'"국가가 보장합니다"',            narr:"나라가 보장하니까요.", img:"img/cut05.webp"},
+  {actor:"🛒 REAL",  icon:"🍪", title:"1,000원 → 1,500원",             narr:"그런데… 이상한 일이 생깁니다.", img:"img/cut06.webp"},
+  {actor:"🛒 REAL",  icon:"🏠", title:"집값은 저 위로",                 narr:"집값은 월급보다 훨씬 빨리 올라갑니다.", img:"img/cut07.webp"},
+  {actor:"📺 MEDIA", icon:"📺", title:'"전쟁 때문이래요"',              narr:"뉴스는 남 탓을 합니다.", img:"img/cut08.webp"},
+  {actor:"💳 BANK",  icon:"🖨️", title:"진짜 원인은 여기",               narr:"진짜 원인은 따로 있었어요.", img:"img/cut09.webp"},
+  {actor:"💳 BANK",  icon:"📉", title:"돈이 늘수록, 내 돈은 작아진다",  narr:"찍어낼수록 내 돈의 힘은 줄어듭니다.", img:"img/cut10.webp"},
+
+  // ACT 2 — 금융 덫과 판의 설계 (00:15–00:37.5)
+  {actor:"💳 BANK",  icon:"🪄", title:"1개로 10개를 만든다",            narr:"은행에는 마술이 있습니다.", img:"img/cut11.webp"},
+  {actor:"💳 BANK",  icon:"⌨️", title:"키보드 한 번 = 수억 원",         narr:"현금은 없어요. 숫자만 입력합니다.", img:"img/cut12.webp"},
+  {actor:"🏛️ GOV",   icon:"📢", title:'"지금 대출받으세요!"',           narr:"그리고 빚을 권합니다.", img:"img/cut13.webp"},
+  {actor:"💳 BANK",  icon:"🎈", title:"모두가 빚 위에 올라탄다",        narr:"사람들은 신나게 받았죠.", img:"img/cut14.webp"},
+  {actor:"💳 BANK",  icon:"🧩", title:"빌려준 건 100, 갚을 건 110",     narr:"여기 함정이 있습니다.", img:"img/cut15.webp"},
+  {actor:"💳 BANK",  icon:"⚔️", title:"없는 이자를 서로에게서 뺏는다",  narr:"없는 돈을 갚으려면, 남의 돈을 가져와야 해요.", img:"img/cut16.webp"},
+  {actor:"👥 SYSTEM",icon:"🪑", title:"의자보다 사람이 많다",           narr:"누군가는 반드시 못 앉습니다.", img:"img/cut17.webp"},
+  {actor:"📺 MEDIA", icon:"🗞️", title:'"네 탓이야"',                    narr:"그런데 뉴스는 그 사람 탓을 합니다.", img:"img/cut18.webp"},
+  {actor:"💳 BANK",  icon:"🫧", title:"거품은 최고점",                  narr:"모두가 아슬아슬하게 서 있습니다.", img:"img/cut19.webp"},
+  {actor:"👥 SYSTEM",icon:"🕹️", title:"누군가 스위치에 손을 얹는다",    narr:"— (무음 0.8초)", img:"img/cut20.webp"},
+  {actor:"🏛️ GOV",   icon:"📈", title:"금리 인상",                     narr:"금리를 올립니다.", img:"img/cut21.webp"},
+  {actor:"💳 BANK",  icon:"☔", title:"비 오는 날 우산을 뺏는다",       narr:"비가 오자 우산을 빼앗습니다.", img:"img/cut22.webp"},
+  {actor:"🛒 REAL",  icon:"🁣", title:"버티지 못한 사람들",             narr:"이자를 감당하지 못한 사람들이 넘어집니다.", img:"img/cut23.webp"},
+  {actor:"🏛️ GOV",   icon:"⚖️", title:"법이 집행된다",                  narr:"법이 집을 가져갑니다.", img:"img/cut24.webp"},
+  {actor:"🛒 REAL",  icon:"🏚️", title:"평생 모은 집이 헐값에",          narr:"평생을 바친 집이 헐값에 나옵니다.", img:"img/cut25.webp"},
+
+  // ACT 3 — 수확과 핏빛 진실 (00:37.5–01:00)
+  {actor:"📺 MEDIA", icon:"📰", title:'"최악의 불황!"',                 narr:"공포가 퍼집니다.", img:"img/cut26.webp"},
+  {actor:"👥 SYSTEM",icon:"🛍️", title:"쇼핑백을 든 거대 자본",          narr:"그때, 쇼핑백을 든 누군가가 나타납니다.", img:"img/cut27.webp"},
+  {actor:"💳 BANK",  icon:"🏗️", title:"종이돈 대신 진짜 자산",          narr:"그들이 사는 건 숫자가 아니라 땅과 건물입니다.", img:"img/cut28.webp"},
+  {actor:"👥 SYSTEM",icon:"🔄", title:"주인만 바뀌었다",                narr:"도시는 그대로, 주인만 바뀌었습니다.", img:"img/cut29.webp"},
+  {actor:"📺 MEDIA", icon:"🕊️", title:'"이제 회복 중입니다"',           narr:"그리고 다시 말합니다. 열심히 일하라고.", img:"img/cut30.webp"},
+  {actor:"🛒 REAL",  icon:"🔑", title:"소유자 → 세입자",                narr:"이제 그는 세입자입니다.", img:"img/cut31.webp"},
+  {actor:"💳 BANK",  icon:"🧾", title:"평생 이자와 세금",               narr:"번 돈은 대부분 위로 흘러갑니다.", img:"img/cut32.webp"},
+  {actor:"🏛️ GOV",   icon:"🛡️", title:"법이 그들을 지킨다",             narr:"법은 그 구조를 지켜줍니다.", img:"img/cut33.webp"},
+  {actor:"📺 MEDIA", icon:"🎭", title:"눈을 가리는 화면",               narr:"그동안 우리 눈은 다른 곳을 봅니다.", img:"img/cut34.webp"},
+  {actor:"👥 SYSTEM",icon:"🕸️", title:"미디어 + 은행 + 정부",           narr:"세 개의 축이 하나로 묶입니다.", img:"img/cut35.webp"},
+  {actor:"💳 BANK",  icon:"⛓️", title:"종이돈이라는 사슬",              narr:"찍어낼 수 있는 숫자에 모두가 묶여 있습니다.", img:"img/cut36.webp"},
+  {actor:"👥 SYSTEM",icon:"🌐", title:"목적은 진짜 자산의 독점",        narr:"숫자 게임의 목적은 진짜 자산입니다.", img:"img/cut37.webp"},
+  {actor:"👥 SYSTEM",icon:"⏳", title:"거품 → 인상 → 파산 → 수확",      narr:"그리고 이 게임은 반복됩니다.", img:"img/cut38.webp"},
+  {actor:"👁️ TRUTH", icon:"👁️", title:"퍼즐이 완성됐다",                narr:"이제 그림이 보입니다.", img:"img/cut39.webp"},
+  {actor:"👁️ TRUTH", icon:"🚨", title:"YOU OWN NOTHING",               narr:"깨닫지 못하면, 계속 남의 판 위에 있습니다.", img:"img/cut40.webp"}
+];
+
+/* ══════════════════════════════════════════════════════════════
+   이하 엔진 — 보통 수정할 필요 없음
+   ══════════════════════════════════════════════════════════════ */
+const $ = id => document.getElementById(id);
+const stage=$('stage'), bg=$('bg'), progress=$('progress'), vignette=$('vignette');
+const plates = Array.from(document.querySelectorAll('.plate'));
+const elCut=$('cutNo'), elActor=$('actor'), elIcon=$('icon'),
+      elTitle=$('title'), elNarr=$('narration'), elAct=$('act'), elClock=$('clock');
+const startOverlay=$('startOverlay'), countOverlay=$('countOverlay'), countdown=$('countdown');
+const controls=$('controls');
+
+/* ── 화면비 ── */
+(function setAspect(){
+  const [w,h] = CONFIG.aspect.split(':').map(Number);
+  stage.style.width  = `min(100vw, calc(100vh * ${w} / ${h}))`;
+  stage.style.height = `min(100vh, calc(100vw * ${h} / ${w}))`;
+})();
+
+/* ── 컷별 길이 계산 ── */
+const durations = (function(){
+  let d = CUTS.map(c => {
+    if (typeof c.sec === 'number') return c.sec;
+    if (CONFIG.timing === 'auto'){
+      const chars = ((c.narr || c.title || '')).replace(/\s/g,'').length;
+      return Math.max(CONFIG.autoMinSec, chars / CONFIG.autoCharPerSec);
+    }
+    return CONFIG.fixedSec;
+  });
+  if (CONFIG.targetSec){
+    const sum = d.reduce((a,b)=>a+b,0);
+    const k = CONFIG.targetSec / sum;
+    d = d.map(x => x * k);
+  }
+  return d.map(x => Math.round(x * 1000)); // ms
+})();
+const STARTS   = durations.reduce((acc,ms,i)=>(acc.push(i?acc[i-1]+durations[i-1]:0),acc),[]);
+const TOTAL_MS = durations.reduce((a,b)=>a+b,0);
+
+/* ── 진행바 (컷 길이에 비례한 폭) ── */
+const segs = CUTS.map((_,i) => {
+  const s = document.createElement('div');
+  s.className = 'seg';
+  s.style.flex = String(durations[i]);
+  s.innerHTML = '<i></i>';
+  progress.appendChild(s);
+  return s;
+});
+
+/* ── 색 서사 ── */
+function grade(i){
+  const c = CUTS[i], t = CONFIG.theme;
+  const p = CUTS.length > 1 ? i / (CUTS.length - 1) : 0;
+  return {
+    hue:   c.hue   ?? (t.hueFrom + (t.hueTo - t.hueFrom) * p),
+    sat:   c.sat   ?? (t.satFrom + (t.satTo - t.satFrom) * p),
+    light: c.light ?? (t.lightFrom - (t.lightFrom - t.lightTo) * Math.pow(p, t.lightCurve)),
+    p
+  };
+}
+function applyGrade(i){
+  const {hue,sat,light,p} = grade(i);
+  stage.style.backgroundColor = `hsl(${hue.toFixed(1)}, ${sat.toFixed(1)}%, ${light.toFixed(1)}%)`;
+  const vf = CONFIG.theme.vignetteFrom;
+  vignette.style.opacity = (vf == null || p < vf) ? 0 : Math.min(1, (p - vf) / (1 - vf));
+}
+
+/* ── 카메라 무브 ──────────────────────────────────────────────
+   플레이트 2장을 번갈아 쓴다. 들어오는 컷은 새 플레이트에 얹어 카메라 무브를
+   시작하면서 페이드 인, 이전 플레이트는 무브를 계속한 채 페이드 아웃한다.
+   (전환 중에도 이전 컷이 멈추지 않아야 슬라이드쇼가 아니라 영상으로 보인다) */
+let plateSlot = 0;
+const liveAnims = [];   // 일시정지 시 함께 멈춰야 할 애니메이션
+
+const tf = k => `scale(${k.s}) translate(${k.x}%, ${k.y}%) rotate(${k.r}deg)`;
+
+function moveFor(i){
+  const c = CUTS[i], cfg = CONFIG.image;
+  const name = c.move || (cfg.defaultMove === 'auto'
+    ? AUTO_MOVES[i % AUTO_MOVES.length]
+    : cfg.defaultMove);
+  return MOVES[name] || MOVES.still;
+}
+
+/* 무브 폭을 intensity 배율로 조절 (배율 1.0 기준점은 유지) */
+function scaled(k, n){
+  return {s: 1 + (k.s - 1) * n, x: k.x * n, y: k.y * n, r: k.r * n};
+}
+
+function showPlate(i){
+  const c = CUTS[i], cfg = CONFIG.image;
+  const incoming = plates[plateSlot], outgoing = plates[1 - plateSlot];
+  plateSlot = 1 - plateSlot;
+
+  if (!c.img){                                   // 이미지 없는 컷 → 전부 페이드 아웃
+    plates.forEach(p => { p.style.opacity = 0; });
+    return;
+  }
+
+  const mv = moveFor(i), n = cfg.intensity ?? 1;
+  incoming.style.backgroundImage = `url("${c.img}")`;
+
+  const a = incoming.animate(
+    [{transform: tf(scaled(mv.from, n))}, {transform: tf(scaled(mv.to, n))}],
+    {duration: durations[i] + cfg.crossfadeMs, easing: mv.ease, fill: 'both'}
+  );
+  liveAnims.push(a);
+  a.finished.catch(()=>{}).finally(() => {
+    const k = liveAnims.indexOf(a); if (k >= 0) liveAnims.splice(k, 1);
+  });
+  if (!playing) a.pause();
+
+  incoming.style.transition = `opacity ${cfg.crossfadeMs}ms linear`;
+  outgoing.style.transition = `opacity ${cfg.crossfadeMs}ms linear`;
+  void incoming.offsetWidth;
+  incoming.style.opacity = cfg.opacity;
+  outgoing.style.opacity = 0;
+}
+
+const pauseAnims = () => liveAnims.forEach(a => a.pause());
+const resumeAnims = () => liveAnims.forEach(a => a.play());
+function killAnims(){
+  liveAnims.splice(0).forEach(a => a.cancel());
+  plates.forEach(p => { p.style.transition='none'; p.style.opacity=0; p.getAnimations().forEach(x=>x.cancel()); });
+}
+
+/* ── 상태 ── */
+let elapsed=0, lastTs=null, playing=false, renderedCut=-1, ended=false, runId=0;
+
+const actLabel = i => (ACTS.find(a => i >= a.from && i <= a.to) || {}).label || '';
+
+function speak(text){
+  if (!CONFIG.tts || !text || !window.speechSynthesis) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ko-KR'; u.rate = CONFIG.ttsRate;
+  speechSynthesis.speak(u);
+}
+
+function renderCut(i){
+  const c = CUTS[i];
+  elCut.textContent   = `CUT ${String(i+1).padStart(2,'0')} / ${CUTS.length}`;
+  elActor.textContent = c.actor || '';
+  elIcon.textContent  = c.icon  || '';
+  elTitle.textContent = c.title || '';
+  elNarr.textContent  = c.narr  || '';
+  elAct.textContent   = actLabel(i);
+  applyGrade(i);
+
+  showPlate(i);
+
+  elIcon.classList.remove('pop');   void elIcon.offsetWidth;  elIcon.classList.add('pop');
+  elTitle.classList.remove('slide'); void elTitle.offsetWidth; elTitle.classList.add('slide');
+
+  if (playing) speak(c.narr);
+  renderedCut = i;
+}
+
+function cutAt(ms){
+  let i = 0;
+  while (i < CUTS.length - 1 && ms >= STARTS[i+1]) i++;
+  return i;
+}
+
+function renderProgress(i, frac){
+  segs.forEach((s,k) => {
+    s.firstChild.style.width = k < i ? '100%' : k === i ? (frac*100).toFixed(1)+'%' : '0%';
+  });
+}
+
+function tick(ts, myRun){
+  if (!playing || myRun !== runId){ lastTs = null; return; }
+  if (lastTs === null) lastTs = ts;
+  elapsed = Math.min(TOTAL_MS, elapsed + (ts - lastTs));
+  lastTs = ts;
+
+  const i = cutAt(elapsed);
+  const frac = Math.min(1, (elapsed - STARTS[i]) / durations[i]);
+  if (i !== renderedCut) renderCut(i);
+  renderProgress(i, elapsed >= TOTAL_MS ? 1 : frac);
+  elClock.textContent = `${(elapsed/1000).toFixed(1)} / ${(TOTAL_MS/1000).toFixed(1)}s`;
+
+  if (elapsed >= TOTAL_MS){ finish(); return; }
+  requestAnimationFrame(t => tick(t, myRun));
+}
+
+function startLoop(){
+  const myRun = ++runId;
+  playing = true; lastTs = null;
+  controls.classList.add('dim');
+  resumeAnims();
+  speak(CUTS[cutAt(elapsed)].narr);
+  requestAnimationFrame(t => tick(t, myRun));
+}
+function play(){ if (ended){ restart(); return; } $('btnPlay').textContent='⏸ 일시정지'; startLoop(); }
+function pause(){
+  playing = false; runId++;
+  pauseAnims();
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  controls.classList.remove('dim');
+  $('btnPlay').textContent = '▶ 재생';
+}
+function toggle(){ playing ? pause() : play(); }
+
+function finish(){
+  playing = false; ended = true;
+  controls.classList.remove('dim');
+  $('btnPlay').textContent = '↺ 다시 재생';
+  setTimeout(() => { if (ended){ stage.style.backgroundColor = '#000'; stopRecording(); } },
+             CONFIG.endHoldSec * 1000);
+}
+function seekCut(i){
+  i = Math.max(0, Math.min(CUTS.length-1, i));
+  ended = false; elapsed = STARTS[i];
+  killAnims();
+  renderCut(i); renderProgress(i, 0);
+  elClock.textContent = `${(elapsed/1000).toFixed(1)} / ${(TOTAL_MS/1000).toFixed(1)}s`;
+}
+function restart(){
+  ended = false; elapsed = 0; renderedCut = -1;
+  killAnims();
+  renderCut(0); renderProgress(0, 0);
+  $('btnPlay').textContent = '⏸ 일시정지';
+  startLoop();
+}
+
+/* ── 3초 카운트다운 후 시작 ── */
+function startWithCountdown(then){
+  startOverlay.classList.add('gone');
+  countOverlay.classList.remove('gone');
+  let n = 3; countdown.textContent = n;
+  const iv = setInterval(() => {
+    if (--n > 0){ countdown.textContent = n; return; }
+    clearInterval(iv);
+    countOverlay.classList.add('gone');
+    if (then) then();
+    restart();
+  }, 1000);
+}
+
+/* ── 화면 캡처 녹화 (탭 공유 → webm 다운로드) ──
+   화면은 확실히 녹화된다. TTS 음성이 탭 오디오로 잡히는지는 브라우저·OS에 따라 다르므로
+   음성이 중요하면 나레이션은 별도 녹음해 편집에서 합치는 편이 확실하다. */
+let recorder = null, chunks = [];
+async function startRecording(){
+  if (!navigator.mediaDevices?.getDisplayMedia){ alert('이 브라우저는 화면 캡처를 지원하지 않습니다.'); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video:{frameRate:30}, audio:true, preferCurrentTab:true
+    });
+  } catch(e){ return; }                       // 사용자가 취소
+  chunks = [];
+  const mime = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm']
+                 .find(m => MediaRecorder.isTypeSupported(m));
+  recorder = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:8_000_000});
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    const url = URL.createObjectURL(new Blob(chunks, {type:'video/webm'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = `${document.title}.webm`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    recorder = null;
+    $('btnRec').textContent = '⏺ 영상으로 저장';
+  };
+  document.body.classList.add('clean');       // 컨트롤 숨긴 채로 녹화
+  recorder.start();
+  $('btnRec').textContent = '■ 녹화 중지';
+  startWithCountdown();
+}
+function stopRecording(){ if (recorder && recorder.state !== 'inactive') recorder.stop(); }
+
+/* ── 컨트롤 바인딩 ── */
+$('playBtn').onclick    = () => startWithCountdown();
+$('btnPlay').onclick    = toggle;
+$('btnRestart').onclick = restart;
+$('btnClean').onclick   = () => document.body.classList.toggle('clean');
+$('btnRec').onclick     = () => recorder ? stopRecording() : startRecording();
+$('btnNarr').onclick    = () => {
+  const hidden = elNarr.classList.toggle('hidden');
+  $('btnNarr').textContent = hidden ? '나레이션 켜기' : '나레이션 끄기';
+};
+document.addEventListener('keydown', e => {
+  const k = e.key.toLowerCase();
+  if (e.code === 'Space'){ e.preventDefault(); toggle(); }
+  else if (e.key === 'ArrowRight'){ pause(); seekCut(cutAt(elapsed) + 1); }
+  else if (e.key === 'ArrowLeft'){  pause(); seekCut(cutAt(elapsed) - 1); }
+  else if (k === 'r'){ restart(); }
+  else if (k === 'h'){ document.body.classList.toggle('clean'); }
+  else if (k === 'n'){ $('btnNarr').click(); }
+});
+
+/* ── 초기화 ── */
+$('startMeta').textContent =
+  `${CUTS.length}컷 · ${(TOTAL_MS/1000).toFixed(1)}초 · 자동 재생 — 재생을 누르면 3초 카운트다운 후 시작합니다.`;
+renderCut(0); renderProgress(0, 0); pause();
+</script>
+</body>
+</html>
